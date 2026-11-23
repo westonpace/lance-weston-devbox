@@ -79,5 +79,7 @@ jobs:
             protoc --version
             buf --version
             docker --version
-            sccache --version
+            mbx --version
+            mbx doctor
+            test "$(command -v cargo)" = /home/lance/.local/share/mbx/bin/cargo
           '

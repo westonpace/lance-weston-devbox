@@ -80,7 +80,7 @@ case "$cmd" in
       lance-devbox-cargo-git \
       lance-devbox-maven \
       lance-devbox-uv-cache \
-      lance-devbox-sccache
+      lance-devbox-mbx-cache
     ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 2 ;;

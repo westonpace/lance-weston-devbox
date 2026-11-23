@@ -18,7 +18,16 @@
         "zxh404.vscode-proto3"
       ],
       "settings": {
-        "rust-analyzer.check.command": "clippy"
+        "//": "mbx setup already points rust-analyzer's check at the Cargo shim; override it here only to make that check clippy rather than check. The shim's absolute path is what lets the editor share the cache without inheriting the box's PATH.",
+        "rust-analyzer.check.overrideCommand": [
+          "/home/lance/.local/share/mbx/bin/cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--target-dir",
+          "target/rust-analyzer",
+          "--message-format=json"
+        ]
       }
     }
   }

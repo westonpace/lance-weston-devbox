@@ -20,6 +20,9 @@ ARG RUST_VERSION=1.98.1
 ARG JDK_VERSIONS="11 17 21"
 ARG DEFAULT_JDK=17
 ARG BUF_VERSION=1.47.2
+# mr boxington, the Rust build cache. Pinned so an image digest names an exact
+# cache client; the on-disk and wire formats are versioned separately.
+ARG MBX_VERSION=1.30.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -110,6 +113,27 @@ RUN set -eux; \
     chmod +x /usr/local/bin/buf; \
     buf --version
 
+# --- mr boxington (mbx) -----------------------------------------------------
+# The Rust build cache. It replaces sccache rather than joining it: both wrap
+# rustc through RUSTC_WRAPPER, so the two cannot be combined.
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) triple=x86_64-unknown-linux-gnu ;; \
+      arm64) triple=aarch64-unknown-linux-gnu ;; \
+      *) echo "unsupported architecture for mbx" >&2; exit 1 ;; \
+    esac; \
+    archive="mbx-${triple}.tar.gz"; \
+    release="https://github.com/jdx/mr-boxington/releases/download/v${MBX_VERSION}"; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL -o "${tmp}/${archive}" "${release}/${archive}"; \
+    curl -fsSL -o "${tmp}/SHA256SUMS" "${release}/SHA256SUMS"; \
+    cd "$tmp"; \
+    grep "  ${archive}$" SHA256SUMS | sha256sum --check --strict -; \
+    tar -xzf "$archive" mbx; \
+    install -m 0755 mbx /usr/local/bin/mbx; \
+    cd /; rm -rf "$tmp"; \
+    mbx --version
+
 # --- unprivileged user ------------------------------------------------------
 # Ubuntu 24.04 ships a default `ubuntu` account at uid 1000; reclaim it so the
 # bind-mounted workspace is owned by the same uid as the host user.
@@ -147,12 +171,25 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 
 # Prebuilt binaries via binstall; building these from source would add ~20
 # minutes to every image build.
-# cargo-llvm-cov backs `cargo +nightly llvm-cov`; sccache is wired up in
-# compose.yml but off unless RUSTC_WRAPPER is set.
+# cargo-llvm-cov backs `cargo +nightly llvm-cov`. Caching is mbx's job, so
+# there is no sccache here.
 RUN curl -L --proto '=https' --tlsv1.2 -sSf \
       https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
- && cargo binstall --no-confirm cargo-llvm-cov cargo-nextest sccache cargo-deny \
+ && cargo binstall --no-confirm cargo-llvm-cov cargo-nextest cargo-deny \
  && rm -rf "${CARGO_HOME}/registry/cache" "${CARGO_HOME}/registry/src"
+
+# Route plain `cargo` through mbx. `mbx setup` writes a Cargo shim at a stable
+# path and points rust-analyzer's background check at that same shim, so the
+# terminal, maturin, the JNI build and the editor all share one cache without
+# anyone remembering to type `mbx`. The shim has to precede ~/.cargo/bin.
+ENV PATH=${HOME}/.local/share/mbx/bin:${PATH}
+# Compiler shims are executables, not cached artifacts, and mbx keeps them
+# under the cache directory by default -- which compose shares between boxes.
+# Give each container a private one, on its own writable layer.
+ENV MBX_SHIMS_DIR=${HOME}/.local/state/mbx-shims
+RUN mkdir -p "${MBX_SHIMS_DIR}" \
+ && mbx setup \
+ && [ "$(command -v cargo)" = "${HOME}/.local/share/mbx/bin/cargo" ]
 
 # python/Makefile's `install` target runs `uv tool run pre-commit install`.
 RUN uv tool install pre-commit

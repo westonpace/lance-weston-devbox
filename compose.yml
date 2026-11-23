@@ -21,25 +21,55 @@ services:
       # Sibling containers (LocalStack), not Docker-in-Docker.
       - /var/run/docker.sock:/var/run/docker.sock
       # Shared across every box: all are safe under concurrent access.
-      # target/ deliberately stays in the bind-mounted checkout, one per box.
+      # Build outputs are not here -- see MBX_TARGET_ROOT below.
       - cargo-registry:/home/lance/.cargo/registry
       - cargo-git:/home/lance/.cargo/git
       - maven:/home/lance/.m2
       - uv-cache:/home/lance/.cache/uv
-      - sccache:/home/lance/.cache/sccache
+      # mbx's action store: the compiler outputs every box reuses. Its shim
+      # directory is deliberately NOT in here (see MBX_SHIMS_DIR in the image).
+      - mbx-cache:/home/lance/.cache/mbx
 
     environment:
       # Bare names pass through from .env / the shell and are omitted entirely
       # when unset -- cargo rejects an empty CARGO_BUILD_JOBS, so a map entry
-      # defaulting to "" would break every build.
+      # defaulting to "" would break every build. The same applies to every
+      # optional MBX_* below.
       #
-      # RUSTC_WRAPPER: set to `sccache` once more than one box is building.
       # CARGO_BUILD_JOBS: cap it when several boxes build at once, or rustc
       # link steps race each other for RAM.
-      - RUSTC_WRAPPER
       - CARGO_BUILD_JOBS
-      - SCCACHE_DIR=/home/lance/.cache/sccache
-      - SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE:-50G}
+
+      # --- rust build cache (mr boxington) ---------------------------------
+      # The action store is shared by every box; that is the whole point.
+      - MBX_CACHE_DIR=/home/lance/.cache/mbx
+      # Managed target directories are keyed by the checkout's path, and every
+      # box mounts its checkout at the same /workspace -- so a shared target
+      # root would hand two boxes the same directory and let Cargo's lock
+      # serialise them. One root per box, on the workspace mount. Keep that
+      # mount and Docker's volumes on one filesystem (they both live on /data
+      # on the EC2 host) so restores hard-link out of the store instead of
+      # copying gigabytes.
+      - MBX_TARGET_ROOT=/workspace/.mbx-targets
+      # One budget over the store, the managed targets and incremental state.
+      - MBX_GC_MAX_TOTAL_SIZE=${MBX_GC_MAX_TOTAL_SIZE:-50GiB}
+
+      # Remote cache. Unset -> the box uses its local store only. On EC2 set
+      # MBX_REMOTE_URL=s3://bucket/prefix in .env and let the instance role
+      # sign the requests; mbx reads IMDSv2 itself, and host networking means
+      # the instance's default metadata hop limit is not in the way.
+      - MBX_REMOTE_URL
+      - MBX_REMOTE_NAMESPACE=${MBX_REMOTE_NAMESPACE:-lance}
+      # mbx publishes only from CI on a protected branch unless it is told the
+      # environment is trusted. A devbox is a plain shell, so without this it
+      # would quietly degrade to read-only and never fill the bucket. Set
+      # MBX_REMOTE_MODE=read-only for a box that should only consume.
+      - MBX_REMOTE_TRUST_WRITES=${MBX_REMOTE_TRUST_WRITES:-true}
+      - MBX_REMOTE_MODE
+      - MBX_REMOTE_S3_REGION
+      - MBX_REMOTE_S3_ENDPOINT
+      - AWS_REGION
+      - AWS_EC2_METADATA_DISABLED
 
     command: ["sleep", "infinity"]
     stop_grace_period: 5s
@@ -60,5 +90,5 @@ volumes:
     name: lance-devbox-maven
   uv-cache:
     name: lance-devbox-uv-cache
-  sccache:
-    name: lance-devbox-sccache
+  mbx-cache:
+    name: lance-devbox-mbx-cache

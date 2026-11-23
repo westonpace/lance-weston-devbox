@@ -5,7 +5,12 @@
 # in the image, so tweaking the environment never means a new AMI.
 #
 # Instance role needs: ssm:GetParameter on GHCR_TOKEN_PARAM and kms:Decrypt
-# for the key that parameter uses.
+# for the key that parameter uses. If the boxes use an S3 remote build cache
+# (MBX_REMOTE_URL), add s3:GetObject and s3:PutObject on
+# <bucket>/<prefix>/<namespace>/* plus s3:ListBucket on the bucket -- mbx signs
+# with the instance role straight from IMDSv2, so nothing is written here.
+# The default metadata hop limit of 1 is fine: the boxes use host networking,
+# so their requests do not cross a bridge.
 set -euxo pipefail
 
 # ---- settings --------------------------------------------------------------

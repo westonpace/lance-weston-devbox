@@ -6,5 +6,8 @@ services:
       # Push from inside the box with your own key and identity.
       - ${HOME}/.ssh:/home/lance/.ssh:ro
       - ${HOME}/.gitconfig:/home/lance/.gitconfig:ro
-      # AWS credentials for tests against real S3.
+      # AWS credentials for tests against real S3. Note that a [default]
+      # profile in here stops mbx from using the EC2 instance role for the
+      # remote cache -- it refuses to sign as the instance rather than silently
+      # ignore a credential source the AWS tools would have preferred.
       - ${HOME}/.aws:/home/lance/.aws:ro
