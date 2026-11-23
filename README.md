@@ -62,6 +62,7 @@ checkout survive it.
 | Java | Temurin 11, 17 and 21; `JAVA_HOME` points at 17. Maven comes from the repo's `./mvnw` |
 | Python | `uv` only — the repo forbids bare `python`/`pip`/`pytest`/`maturin`. `pre-commit` preinstalled as a uv tool |
 | Native | `protobuf-compiler`, `libssl-dev`, `pkg-config`, `cmake`, `clang`, `lld`, `libhdf5-dev` (the hdf5 benchmark) |
+| Linker | mold, pinned and fetched by mbx. See [Linker](#linker) |
 | Protos | `buf` |
 | Docker | client + compose plugin, pointed at the host's socket |
 
@@ -152,6 +153,36 @@ hard-link out of the store instead of copying gigabytes.
 
 `MBX_GC_MAX_TOTAL_SIZE` (default `50GiB`) is one budget covering the store, the
 managed targets and incremental state.
+
+### Linker
+
+mold, pinned to an exact version (`MOLD_VERSION` in the
+[`Dockerfile`](Dockerfile)), is the default linker for every Rust link. mbx
+downloads that release itself on first use — verified against GitHub's digest,
+and kept under the shared cache volume, so one box's download serves them all.
+Nothing is baked into the image but the choice.
+
+It is set in mbx's *global* configuration, the lowest-precedence of its three
+sources, so a repository that ships its own `.mbx.toml` still wins and
+`MBX_LINKER` overrides both for a single invocation:
+
+```bash
+MBX_LINKER=system cargo build
+```
+
+`system` is GNU `ld`; `rust-lld` is the toolchain's own LLD with no download.
+`MBX_LINKER` also passes through `compose.yml`, so a box can be pinned to one
+in `.env`.
+
+Two consequences worth knowing:
+
+- **`clang` is load-bearing now.** Every linker selection other than `system`
+  links through it. It was already in the image for native dependencies, but
+  dropping it would now break every Rust build outright, not just a few crates.
+- **The linker is part of the cache key for native links.** A box on `system`
+  stops sharing those results with the boxes on mold — and so would CI, if it
+  ever writes to the same namespace. Compare equivalent builds when you measure
+  what mold bought you.
 
 ### S3 as the shared cache
 

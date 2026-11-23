@@ -53,6 +53,11 @@ services:
       - MBX_TARGET_ROOT=/workspace/.mbx-targets
       # One budget over the store, the managed targets and incremental state.
       - MBX_GC_MAX_TOTAL_SIZE=${MBX_GC_MAX_TOTAL_SIZE:-50GiB}
+      # The image makes mold the default linker. Set MBX_LINKER=system to put a
+      # box back on GNU ld -- for a bisect against a link-order bug, say. It is
+      # part of the cache key for native links, so a box that differs here
+      # stops sharing those results with the others.
+      - MBX_LINKER
 
       # Remote cache. Unset -> the box uses its local store only. On EC2 set
       # MBX_REMOTE_URL=s3://bucket/prefix in .env and let the instance role

@@ -82,4 +82,5 @@ jobs:
             mbx --version
             mbx doctor
             test "$(command -v cargo)" = /home/lance/.local/share/mbx/bin/cargo
+            mbx settings get linker.default | grep -q "^mold@"
           '

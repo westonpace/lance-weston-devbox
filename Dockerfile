@@ -23,6 +23,10 @@ ARG BUF_VERSION=1.47.2
 # mr boxington, the Rust build cache. Pinned so an image digest names an exact
 # cache client; the on-disk and wire formats are versioned separately.
 ARG MBX_VERSION=1.30.0
+# mbx downloads and pins this mold release itself, at first link rather than at
+# image build time, into the shared cache volume. It must be an exact version;
+# mbx rejects `latest`.
+ARG MOLD_VERSION=3.0.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -30,7 +34,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # --- base system packages ---------------------------------------------------
 # protobuf-compiler: prost build scripts. libssl-dev/pkg-config: native TLS.
-# libhdf5-dev: the hdf5 benchmark. clang/lld/cmake: native deps in the tree.
+# libhdf5-dev: the hdf5 benchmark. lld/cmake: native deps in the tree. clang is
+# also how mbx drives mold -- every linker selection other than `system` links
+# through it, and Rust builds fail outright without it.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       bash-completion \
@@ -190,6 +196,16 @@ ENV MBX_SHIMS_DIR=${HOME}/.local/state/mbx-shims
 RUN mkdir -p "${MBX_SHIMS_DIR}" \
  && mbx setup \
  && [ "$(command -v cargo)" = "${HOME}/.local/share/mbx/bin/cargo" ]
+
+# mold for every Rust link. This is mbx's global configuration, the lowest
+# precedence of its three sources, so a repository that ships its own .mbx.toml
+# still wins and MBX_LINKER overrides both for one invocation. mbx fetches the
+# release on first use, verifies GitHub's digest and keeps it under the shared
+# cache volume, so one box's download serves them all.
+RUN mkdir -p "${HOME}/.config/mbx" \
+ && printf '[linker]\ndefault = "mold@%s"\n' "${MOLD_VERSION}" \
+      > "${HOME}/.config/mbx/config.toml" \
+ && [ "$(mbx settings get linker.default)" = "mold@${MOLD_VERSION}" ]
 
 # python/Makefile's `install` target runs `uv tool run pre-commit install`.
 RUN uv tool install pre-commit
