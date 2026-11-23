@@ -1,0 +1,25 @@
+{
+  "name": "lance-devbox",
+  "dockerComposeFile": ["../compose.yml"],
+  "service": "devbox",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "lance",
+  "overrideCommand": false,
+  "shutdownAction": "none",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "redhat.java",
+        "vscjava.vscode-java-debug",
+        "zxh404.vscode-proto3"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy"
+      }
+    }
+  }
+}

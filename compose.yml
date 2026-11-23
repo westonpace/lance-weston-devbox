@@ -1,0 +1,64 @@
+name: ${DEVBOX_NAME:-lance-devbox}
+
+services:
+  devbox:
+    image: ${DEVBOX_IMAGE:-ghcr.io/westonpace/lance-weston-devbox:latest}
+    container_name: ${DEVBOX_NAME:-lance-devbox}
+    hostname: ${DEVBOX_NAME:-lance-devbox}
+    init: true
+
+    # Host networking is deliberate. lance's integration tests hardcode
+    # http://localhost:4566 (rust/lance/src/io/commit/s3_test.rs,
+    # python/python/tests/test_s3_ddb.py) and `make integtest` starts
+    # LocalStack itself via the mounted Docker socket, which publishes 4566 on
+    # the HOST. Sharing the host netns is what makes those two line up.
+    # Consequence: boxes share one network stack, so run `make integtest` in
+    # one box at a time.
+    network_mode: host
+
+    volumes:
+      - ${DEVBOX_WORKSPACE:-./workspace}:/workspace
+      # Sibling containers (LocalStack), not Docker-in-Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared across every box: all are safe under concurrent access.
+      # target/ deliberately stays in the bind-mounted checkout, one per box.
+      - cargo-registry:/home/lance/.cargo/registry
+      - cargo-git:/home/lance/.cargo/git
+      - maven:/home/lance/.m2
+      - uv-cache:/home/lance/.cache/uv
+      - sccache:/home/lance/.cache/sccache
+
+    environment:
+      # Bare names pass through from .env / the shell and are omitted entirely
+      # when unset -- cargo rejects an empty CARGO_BUILD_JOBS, so a map entry
+      # defaulting to "" would break every build.
+      #
+      # RUSTC_WRAPPER: set to `sccache` once more than one box is building.
+      # CARGO_BUILD_JOBS: cap it when several boxes build at once, or rustc
+      # link steps race each other for RAM.
+      - RUSTC_WRAPPER
+      - CARGO_BUILD_JOBS
+      - SCCACHE_DIR=/home/lance/.cache/sccache
+      - SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE:-50G}
+
+    command: ["sleep", "infinity"]
+    stop_grace_period: 5s
+
+    # $HOME lives in the container's writable layer, not a volume, so that
+    # rebuilding the image genuinely updates the toolchains instead of leaving
+    # a stale ~/.rustup behind. Use `devbox stop`/`devbox start` for the daily
+    # cycle; `devbox down` is the deliberate "give me a clean home" button.
+
+volumes:
+  # Explicit `name:` keeps these outside the compose project namespace so
+  # every box shares one copy instead of re-downloading crates per box.
+  cargo-registry:
+    name: lance-devbox-cargo-registry
+  cargo-git:
+    name: lance-devbox-cargo-git
+  maven:
+    name: lance-devbox-maven
+  uv-cache:
+    name: lance-devbox-uv-cache
+  sccache:
+    name: lance-devbox-sccache

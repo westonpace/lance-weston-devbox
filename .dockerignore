@@ -1,0 +1,6 @@
+# The build context only needs the entrypoint; keep it tiny so `docker build`
+# does not ship the repo (or a stray ./workspace checkout) to the daemon.
+*
+!scripts
+scripts/*
+!scripts/entrypoint.sh

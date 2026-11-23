@@ -1,0 +1,10 @@
+# Copy to compose.override.yml for machine-local extras. Compose picks it up
+# automatically and it is gitignored, so personal paths stay out of the repo.
+services:
+  devbox:
+    volumes:
+      # Push from inside the box with your own key and identity.
+      - ${HOME}/.ssh:/home/lance/.ssh:ro
+      - ${HOME}/.gitconfig:/home/lance/.gitconfig:ro
+      # AWS credentials for tests against real S3.
+      - ${HOME}/.aws:/home/lance/.aws:ro

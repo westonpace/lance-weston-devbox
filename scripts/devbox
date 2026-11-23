@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Thin wrapper over `docker compose` for the Lance devbox.
+#
+# Every subcommand honours DEVBOX_NAME / DEVBOX_WORKSPACE / DEVBOX_IMAGE, so a
+# second box is just:
+#   DEVBOX_NAME=box2 DEVBOX_WORKSPACE=/data/box2 scripts/devbox up
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# Load .env without clobbering anything already exported, so per-invocation
+# overrides win -- matching how compose itself resolves these.
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in ''|'#'*) continue ;; esac
+    [ -n "${!key:-}" ] || export "$key=$value"
+  done < .env
+fi
+
+NAME="${DEVBOX_NAME:-lance-devbox}"
+IMAGE="${DEVBOX_IMAGE:-ghcr.io/westonpace/lance-weston-devbox:latest}"
+WORKSPACE="${DEVBOX_WORKSPACE:-./workspace}"
+export DEVBOX_NAME="$NAME" DEVBOX_IMAGE="$IMAGE" DEVBOX_WORKSPACE="$WORKSPACE"
+
+compose() { docker compose -p "$NAME" "$@"; }
+
+usage() {
+  cat <<EOF
+usage: devbox <command> [args]
+
+  build [--arg ...]  Build the image locally (tags it $IMAGE)
+  push               Push the image to its registry
+  pull               Pull the image
+  up                 Create and start the box (pulls if absent)
+  stop               Stop the box, keeping its filesystem
+  start              Start a stopped box
+  down               Remove the box (shared caches survive; \$HOME does not)
+  shell              Interactive shell in the box
+  exec <cmd...>      Run a command in the box
+  ps                 List running boxes
+  caches             Show shared cache volume sizes
+  clean-caches       Delete the shared cache volumes
+
+  DEVBOX_NAME=$NAME
+  DEVBOX_WORKSPACE=$WORKSPACE
+  DEVBOX_IMAGE=$IMAGE
+EOF
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  build)
+    docker build -t "$IMAGE" "$@" .
+    ;;
+  push)  docker push "$IMAGE" ;;
+  pull)  docker pull "$IMAGE" ;;
+  up)
+    mkdir -p "$WORKSPACE"
+    compose up -d
+    echo "ready: scripts/devbox shell"
+    ;;
+  stop)  compose stop ;;
+  start) compose start ;;
+  down)  compose down ;;
+  shell) docker exec -it -w /workspace "$NAME" bash -l ;;
+  exec)  docker exec -it -w /workspace "$NAME" "$@" ;;
+  ps)
+    docker ps --filter 'label=com.docker.compose.service=devbox' \
+      --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+    ;;
+  caches)
+    docker system df -v | grep -E 'VOLUME NAME|lance-devbox-' || true
+    ;;
+  clean-caches)
+    docker volume rm \
+      lance-devbox-cargo-registry \
+      lance-devbox-cargo-git \
+      lance-devbox-maven \
+      lance-devbox-uv-cache \
+      lance-devbox-sccache
+    ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
